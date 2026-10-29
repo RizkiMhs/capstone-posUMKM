@@ -7,7 +7,7 @@ import { Wallet, Loader2, Info, Banknote, ShieldAlert } from 'lucide-react';
 export default function OpenShiftModal({ isOpen, onClose }) {
   const { profile } = useAuth();
   const { openNewShift } = useShift();
-  const [startingCash, setStartingCash] = useState('200000');
+  const [startingCash, setStartingCash] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');

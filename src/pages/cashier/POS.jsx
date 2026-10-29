@@ -18,6 +18,7 @@ import {
   Receipt,
   Tag,
   Wallet,
+  AlertTriangle,
   Upload,
   Image as ImageIcon,
 } from 'lucide-react';
@@ -107,6 +108,7 @@ export default function POS() {
   const numCashReceived = Number(cashReceived) || 0;
   const change = paymentMethod === 'tunai' ? numCashReceived - finalTotal : 0;
   const isPayDisabled =
+    !activeShift ||
     processing ||
     items.length === 0 ||
     (paymentMethod === 'tunai' && numCashReceived < finalTotal) ||
@@ -114,10 +116,27 @@ export default function POS() {
 
   const totalCartQty = items.reduce((sum, item) => sum + item.qty, 0);
 
+  const handleProductSelect = (product) => {
+    if (!activeShift) {
+      setShowOpenShiftModal(true);
+      return;
+    }
+    if (product.stock !== null && product.stock <= 0) return;
+    addItem(product);
+  };
+
   const handleCheckout = async () => {
+    if (!activeShift) {
+      alert('Laci kasir belum dibuka! Harap buka kasir dan masukkan uang modal awal terlebih dahulu.');
+      setShowOpenShiftModal(true);
+      return;
+    }
     if (isPayDisabled) return;
     setProcessing(true);
     try {
+      if (!activeShift?.id) {
+        throw new Error('Shift kasir aktif tidak ditemukan. Harap buka kasir terlebih dahulu.');
+      }
       let paymentProofUrl = null;
       if (paymentMethod === 'qris' && qrisProofFile) {
         const fileExt = qrisProofFile.name.split('.').pop() || 'jpg';
@@ -256,24 +275,27 @@ export default function POS() {
       <div className="md:col-span-7 lg:col-span-8 space-y-4">
         {/* Banner Status Laci Kasir (Modal Awal & Shift) */}
         {!loadingShift && !activeShift ? (
-          <div className="p-3.5 bg-amber-50 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-fadeIn">
+          <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-fadeIn">
             <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
                 <Wallet className="w-5 h-5 stroke-[2.2]" />
               </div>
               <div>
-                <p className="font-bold text-xs text-amber-900">Laci Kasir Belum Dibuka</p>
-                <p className="text-[11px] text-amber-700 font-medium">
-                  Harap masukkan uang modal awal kembalian untuk membuka shift transaksi hari ini.
+                <p className="font-extrabold text-sm text-amber-950 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  Laci Kasir Belum Dibuka
+                </p>
+                <p className="text-xs text-amber-800 font-medium mt-0.5">
+                  Transaksi kasir dinonaktifkan sebelum laci dibuka. Masukkan uang modal awal untuk memulai shift kasir.
                 </p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => setShowOpenShiftModal(true)}
-              className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex-shrink-0"
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-extrabold rounded-xl transition shadow-xs flex-shrink-0"
             >
-              Buka Kasir & Modal Awal
+              Buka Kasir Sekarang
             </button>
           </div>
         ) : activeShift ? (
@@ -388,7 +410,7 @@ export default function POS() {
               return (
                 <div
                   key={p.id}
-                  onClick={() => !isOutOfStock && addItem(p)}
+                  onClick={() => handleProductSelect(p)}
                   className={`group bg-white rounded-2xl p-3 flex flex-col justify-between border transition-all duration-200 select-none ${
                     isOutOfStock
                       ? 'opacity-60 border-slate-200 cursor-not-allowed bg-slate-50'
@@ -486,6 +508,28 @@ export default function POS() {
             </button>
           )}
         </div>
+
+        {/* Peringatan Laci Belum Dibuka di Keranjang */}
+        {!loadingShift && !activeShift && (
+          <div className="p-3 bg-amber-50 border border-amber-200/90 rounded-2xl flex items-center justify-between gap-2.5 text-amber-900 mb-2 animate-fadeIn flex-shrink-0">
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                <Wallet className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold truncate">Laci Belum Dibuka</p>
+                <p className="text-[10px] text-amber-700 font-medium">Buka kasir untuk mulai transaksi</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowOpenShiftModal(true)}
+              className="text-[11px] font-extrabold px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl shadow-xs shrink-0 transition"
+            >
+              Buka Laci
+            </button>
+          </div>
+        )}
 
         {/* List Item Keranjang - Area lebih luas & leluasa */}
         <div className="space-y-2.5 min-h-[220px] max-h-[460px] lg:max-h-[520px] overflow-y-auto pr-1.5 my-1">
@@ -803,36 +847,47 @@ export default function POS() {
             </div>
           </div>
 
-          {/* Tombol Bayar */}
-          <button
-            onClick={handleCheckout}
-            disabled={isPayDisabled}
-            className={`w-full py-3.5 active:scale-[0.98] text-white font-extrabold rounded-2xl text-sm transition-all flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-md ${
-              paymentMethod === 'qris' && !qrisProofFile
-                ? 'bg-slate-400 cursor-not-allowed shadow-none'
-                : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-emerald-600/25'
-            }`}
-          >
-            {processing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
+          {/* Tombol Bayar / Buka Laci Kasir */}
+          {!activeShift ? (
+            <button
+              type="button"
+              onClick={() => setShowOpenShiftModal(true)}
+              className="w-full py-3.5 active:scale-[0.98] bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold rounded-2xl text-sm transition-all flex items-center justify-center space-x-2 shadow-md shadow-amber-500/20"
+            >
+              <Wallet className="w-4 h-4" />
+              <span>Buka Laci Kasir Terlebih Dahulu</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleCheckout}
+              disabled={isPayDisabled}
+              className={`w-full py-3.5 active:scale-[0.98] text-white font-extrabold rounded-2xl text-sm transition-all flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-md ${
+                paymentMethod === 'qris' && !qrisProofFile
+                  ? 'bg-slate-400 cursor-not-allowed shadow-none'
+                  : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-emerald-600/25'
+              }`}
+            >
+              {processing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>
+                    {paymentMethod === 'qris'
+                      ? 'Mengupload Bukti & Memproses...'
+                      : 'Memproses Transaksi...'}
+                  </span>
+                </>
+              ) : paymentMethod === 'qris' && !qrisProofFile ? (
+                <span>Upload Bukti QRIS Dulu</span>
+              ) : (
                 <span>
-                  {paymentMethod === 'qris'
-                    ? 'Mengupload Bukti & Memproses...'
-                    : 'Memproses Transaksi...'}
+                  Bayar Sekarang{' '}
+                  {paymentMethod === 'tunai' && numCashReceived >= finalTotal
+                    ? `(${formatRupiah(finalTotal)})`
+                    : ''}
                 </span>
-              </>
-            ) : paymentMethod === 'qris' && !qrisProofFile ? (
-              <span>Upload Bukti QRIS Dulu</span>
-            ) : (
-              <span>
-                Bayar Sekarang{' '}
-                {paymentMethod === 'tunai' && numCashReceived >= finalTotal
-                  ? `(${formatRupiah(finalTotal)})`
-                  : ''}
-              </span>
-            )}
-          </button>
+              )}
+            </button>
+          )}
         </div>
       </div>
 

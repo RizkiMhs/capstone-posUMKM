@@ -1,18 +1,27 @@
 import { supabase } from '../lib/supabaseClient';
 
 export const getCurrentShift = async (cashierId = null) => {
-  let query = supabase
+  if (cashierId) {
+    const { data: userShift, error: uErr } = await supabase
+      .from('cashier_shifts')
+      .select('*, profiles(name)')
+      .eq('status', 'open')
+      .eq('cashier_id', cashierId)
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!uErr && userShift) return userShift;
+  }
+
+  const { data, error } = await supabase
     .from('cashier_shifts')
     .select('*, profiles(name)')
     .eq('status', 'open')
     .order('opened_at', { ascending: false })
-    .limit(1);
+    .limit(1)
+    .maybeSingle();
 
-  if (cashierId) {
-    query = query.eq('cashier_id', cashierId);
-  }
-
-  const { data, error } = await query.maybeSingle();
   if (error) throw error;
   return data;
 };
