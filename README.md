@@ -88,3 +88,4 @@ Buka browser di `http://localhost:5173`.
 
 ## 📄 Lisensi
 Proyek Capstone POS UMKM Kuliner ini dilisensikan di bawah [MIT License](LICENSE).
+

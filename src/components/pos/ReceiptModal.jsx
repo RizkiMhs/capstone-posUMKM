@@ -1,4 +1,4 @@
-import { Printer, X } from 'lucide-react';
+import { Printer, X, Image as ImageIcon } from 'lucide-react';
 import { formatRupiah } from '../../utils/formatRupiah';
 import { getStoreSettings } from '../../utils/storeSettings';
 
@@ -14,6 +14,7 @@ export default function ReceiptModal({ isOpen, onClose, transactionData }) {
     orderType = 'dine_in',
     tableNumber = '',
     paymentMethod = 'tunai',
+    paymentProofUrl = null,
     items = [],
     subtotal = 0,
     discount = 0,
@@ -158,6 +159,12 @@ export default function ReceiptModal({ isOpen, onClose, transactionData }) {
                 <span>Metode:</span>
                 <span className="uppercase font-bold">{paymentMethod}</span>
               </div>
+              {paymentMethod === 'qris' && paymentProofUrl && (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>Bukti QRIS:</span>
+                  <span>Terverifikasi ✓</span>
+                </div>
+              )}
               {paymentMethod === 'tunai' && (
                 <>
                   <div className="flex justify-between">
@@ -178,6 +185,44 @@ export default function ReceiptModal({ isOpen, onClose, transactionData }) {
             </div>
           </div>
         </div>
+
+        {/* Bukti QRIS Preview (Non-print) */}
+        {paymentProofUrl && (
+          <div className="px-5 pb-3 no-print">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <a
+                  href={paymentProofUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-12 h-12 rounded-lg border border-emerald-200 overflow-hidden shrink-0 bg-white shadow-xs hover:opacity-85 transition block"
+                  title="Klik untuk memperbesar bukti"
+                >
+                  <img
+                    src={paymentProofUrl}
+                    alt="Bukti Transfer QRIS"
+                    className="w-full h-full object-cover"
+                  />
+                </a>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-emerald-900 truncate flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    Bukti Transfer QRIS
+                  </p>
+                  <p className="text-[11px] text-emerald-700">Foto bukti berhasil tersimpan</p>
+                </div>
+              </div>
+              <a
+                href={paymentProofUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shrink-0 transition"
+              >
+                Lihat Foto
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* Modal Actions */}
         <div className="p-4 border-t border-slate-100 flex space-x-2.5 no-print bg-white">

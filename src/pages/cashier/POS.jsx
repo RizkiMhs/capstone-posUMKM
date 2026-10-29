@@ -18,6 +18,8 @@ import {
   Receipt,
   Tag,
   Wallet,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react';
 import ReceiptModal from '../../components/pos/ReceiptModal';
 import { useShift } from '../../context/ShiftContext';
@@ -53,6 +55,28 @@ export default function POS() {
   const [showShiftReceipt, setShowShiftReceipt] = useState(false);
   const [shiftReceiptData, setShiftReceiptData] = useState(null);
 
+  // State untuk Bukti Pembayaran QRIS
+  const [qrisProofFile, setQrisProofFile] = useState(null);
+  const [qrisProofPreview, setQrisProofPreview] = useState(null);
+
+  const handleQrisProofChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Ukuran file foto bukti transfer maksimal 5MB');
+        return;
+      }
+      setQrisProofFile(file);
+      setQrisProofPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const removeQrisProof = () => {
+    setQrisProofFile(null);
+    if (qrisProofPreview) URL.revokeObjectURL(qrisProofPreview);
+    setQrisProofPreview(null);
+  };
+
   const fetchCatalog = async () => {
     try {
       const [prodRes, catRes] = await Promise.all([
@@ -85,7 +109,8 @@ export default function POS() {
   const isPayDisabled =
     processing ||
     items.length === 0 ||
-    (paymentMethod === 'tunai' && numCashReceived < finalTotal);
+    (paymentMethod === 'tunai' && numCashReceived < finalTotal) ||
+    (paymentMethod === 'qris' && !qrisProofFile);
 
   const totalCartQty = items.reduce((sum, item) => sum + item.qty, 0);
 
@@ -93,24 +118,75 @@ export default function POS() {
     if (isPayDisabled) return;
     setProcessing(true);
     try {
-      const { data: transaction, error: txError } = await supabase
+      let paymentProofUrl = null;
+      if (paymentMethod === 'qris' && qrisProofFile) {
+        const fileExt = qrisProofFile.name.split('.').pop() || 'jpg';
+        const fileName = `qris_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `payments/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('menus')
+          .upload(filePath, qrisProofFile, {
+            contentType: qrisProofFile.type,
+            upsert: true,
+          });
+
+        if (uploadError) {
+          throw new Error('Gagal mengupload bukti transfer QRIS: ' + uploadError.message);
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('menus')
+          .getPublicUrl(filePath);
+
+        paymentProofUrl = publicUrlData.publicUrl;
+      }
+
+      const orderTypeFormatted =
+        orderType === 'dine_in' && tableNumber.trim()
+          ? `dine_in - Meja ${tableNumber.trim()}`
+          : orderType;
+
+      const txPayload = {
+        cashier_id: user?.id || null,
+        shift_id: activeShift?.id || null,
+        total_amount: finalTotal,
+        payment_method: paymentMethod,
+        order_type: orderTypeFormatted,
+      };
+
+      if (paymentProofUrl) {
+        txPayload.payment_proof_url = paymentProofUrl;
+      }
+
+      let transaction;
+      const { data: txData, error: txError } = await supabase
         .from('transactions')
-        .insert([
-          {
-            cashier_id: user?.id || null,
-            shift_id: activeShift?.id || null,
-            total_amount: finalTotal,
-            payment_method: paymentMethod,
-            order_type:
-              orderType === 'dine_in' && tableNumber.trim()
-                ? `dine_in - Meja ${tableNumber.trim()}`
-                : orderType,
-          },
-        ])
+        .insert([txPayload])
         .select()
         .single();
 
-      if (txError) throw txError;
+      if (txError) {
+        if (
+          txError.message?.includes('payment_proof_url') ||
+          txError.code === '42703' ||
+          txError.code === 'PGRST204'
+        ) {
+          delete txPayload.payment_proof_url;
+          txPayload.order_type = `${orderTypeFormatted} [BuktiQRIS: ${paymentProofUrl}]`;
+          const { data: retryData, error: retryError } = await supabase
+            .from('transactions')
+            .insert([txPayload])
+            .select()
+            .single();
+          if (retryError) throw retryError;
+          transaction = retryData;
+        } else {
+          throw txError;
+        }
+      } else {
+        transaction = txData;
+      }
 
       const itemRows = items.map((item) => ({
         transaction_id: transaction.id,
@@ -141,6 +217,7 @@ export default function POS() {
         orderType,
         tableNumber: orderType === 'dine_in' ? tableNumber.trim() : '',
         paymentMethod,
+        paymentProofUrl,
         items: [...items],
         subtotal: totalAmount,
         discount: numDiscount,
@@ -161,6 +238,7 @@ export default function POS() {
 
       setShowReceipt(true);
       clearCart();
+      removeQrisProof();
       setCashReceived('');
       setDiscount('');
       setTableNumber('');
@@ -630,6 +708,79 @@ export default function POS() {
             </div>
           )}
 
+          {/* Area Upload Bukti Transfer QRIS */}
+          {paymentMethod === 'qris' && (
+            <div className="space-y-2.5 bg-purple-50/70 p-3.5 rounded-2xl border border-purple-200/90 animate-fadeIn">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-purple-950 flex items-center space-x-1.5">
+                  <QrCode className="w-4 h-4 text-purple-700" />
+                  <span>Bukti Transfer QRIS</span>
+                </span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                    qrisProofFile
+                      ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                      : 'text-rose-600 bg-rose-50 border border-rose-200 animate-pulse'
+                  }`}
+                >
+                  {qrisProofFile ? 'Foto Terlampir ✓' : 'Wajib Diunggah'}
+                </span>
+              </div>
+
+              {qrisProofPreview ? (
+                <div className="relative rounded-xl overflow-hidden border border-purple-300 bg-white group shadow-2xs">
+                  <img
+                    src={qrisProofPreview}
+                    alt="Bukti Transfer QRIS"
+                    className="w-full h-36 object-contain bg-slate-900/5 p-1"
+                  />
+                  <div className="p-2 bg-white border-t border-purple-100 flex items-center justify-between text-[11px]">
+                    <span className="text-emerald-700 font-bold flex items-center space-x-1 truncate max-w-[170px]">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate">{qrisProofFile?.name || 'Bukti Transfer QRIS'}</span>
+                    </span>
+                    <div className="flex items-center space-x-2 flex-shrink-0">
+                      <label className="text-purple-700 hover:text-purple-900 font-bold cursor-pointer hover:underline">
+                        Ganti
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleQrisProofChange}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={removeQrisProof}
+                        className="text-rose-600 hover:text-rose-800 font-bold hover:underline"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <label className="border-2 border-dashed border-purple-300 hover:border-purple-500 bg-white/90 hover:bg-white rounded-xl p-3.5 flex flex-col items-center justify-center cursor-pointer transition text-center group">
+                  <div className="w-9 h-9 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center mb-1.5 group-hover:scale-105 transition shadow-2xs">
+                    <Upload className="w-4 h-4" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-800 group-hover:text-purple-700 transition">
+                    Upload Foto Bukti Transfer
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Klik atau foto struk / tangkapan layar pembayaran (Maks 5MB)
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleQrisProofChange}
+                  />
+                </label>
+              )}
+            </div>
+          )}
+
           {/* Subtotal & Total Tagihan */}
           <div className="space-y-1 pt-1 border-t border-slate-200/80">
             {numDiscount > 0 && (
@@ -656,13 +807,23 @@ export default function POS() {
           <button
             onClick={handleCheckout}
             disabled={isPayDisabled}
-            className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 active:scale-[0.98] text-white font-extrabold rounded-2xl text-sm transition-all flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-emerald-600/25"
+            className={`w-full py-3.5 active:scale-[0.98] text-white font-extrabold rounded-2xl text-sm transition-all flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-md ${
+              paymentMethod === 'qris' && !qrisProofFile
+                ? 'bg-slate-400 cursor-not-allowed shadow-none'
+                : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-emerald-600/25'
+            }`}
           >
             {processing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Memproses Transaksi...</span>
+                <span>
+                  {paymentMethod === 'qris'
+                    ? 'Mengupload Bukti & Memproses...'
+                    : 'Memproses Transaksi...'}
+                </span>
               </>
+            ) : paymentMethod === 'qris' && !qrisProofFile ? (
+              <span>Upload Bukti QRIS Dulu</span>
             ) : (
               <span>
                 Bayar Sekarang{' '}

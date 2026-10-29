@@ -17,9 +17,10 @@ CREATE TABLE IF NOT EXISTS public.cashier_shifts (
     notes TEXT                                         -- Catatan kasir / serah terima
 );
 
--- 2. Tambahkan kolom shift_id pada tabel transactions (opsional tapi sangat berguna untuk audit)
+-- 2. Tambahkan kolom shift_id dan payment_proof_url pada tabel transactions
 ALTER TABLE public.transactions 
-ADD COLUMN IF NOT EXISTS shift_id UUID REFERENCES public.cashier_shifts(id) ON DELETE SET NULL;
+ADD COLUMN IF NOT EXISTS shift_id UUID REFERENCES public.cashier_shifts(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
 
 -- 3. Aktifkan Row Level Security (RLS) & Berikan Akses Penuh
 ALTER TABLE public.cashier_shifts ENABLE ROW LEVEL SECURITY;
